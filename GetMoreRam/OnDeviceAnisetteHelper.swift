@@ -66,8 +66,11 @@ final class OnDeviceAnisetteHelper {
             clientInfo: data.deviceDescription,
             userAgent: userAgent ?? "AuthKit/1 (Macintosh; OS X 27.0) (com.apple.akd/1.0)",
             clientTime: formatter.string(from: data.date),
-            locale: data.locale.identifier,
-            timeZone: data.timeZone.abbreviation() ?? "UTC"
+            // Match on-device mode (AnisetteKit's defaults). The device's own
+            // values, e.g. "en_US@rg=frzzzz" and "GMT+1", make Apple's 2FA
+            // endpoints fail with HTTP 500.
+            locale: "en_US",
+            timeZone: "UTC"
         )
     }
 

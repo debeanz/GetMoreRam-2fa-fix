@@ -105,8 +105,8 @@ final class AnisetteDataHelper
                 formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
                 let dateString = formatter.string(from: Date())
                 formattedJSON["date"] = dateString
-                formattedJSON["locale"] = Locale.current.identifier
-                formattedJSON["timeZone"] = TimeZone.current.abbreviation()
+                formattedJSON["locale"] = "en_US"
+                formattedJSON["timeZone"] = "UTC"
             } else {
                 if let deviceDescription = json["X-MMe-Client-Info"] { formattedJSON["deviceDescription"] = deviceDescription }
                 if let localUserID = json["X-Apple-I-MD-LU"] { formattedJSON["localUserID"] = localUserID }
@@ -336,8 +336,8 @@ final class AnisetteDataHelper
         formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
         let dateString = formatter.string(from: Date())
         request.setValue(dateString, forHTTPHeaderField: "X-Apple-I-Client-Time")
-        request.setValue(Locale.current.identifier, forHTTPHeaderField: "X-Apple-Locale")
-        request.setValue(TimeZone.current.abbreviation(), forHTTPHeaderField: "X-Apple-I-TimeZone")
+        request.setValue("en_US", forHTTPHeaderField: "X-Apple-Locale")
+        request.setValue("UTC", forHTTPHeaderField: "X-Apple-I-TimeZone")
         return request
     }
     
