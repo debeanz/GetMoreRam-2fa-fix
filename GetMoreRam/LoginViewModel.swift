@@ -80,54 +80,41 @@ class LoginViewModel: ObservableObject {
         }
 
         do {
-            let account: Account
-            let session: AppleAPISession
-            var sideSignTeams: [Team]?
-            if UserDefaults.standard.object(forKey: "UseOnDeviceAnisette") == nil ||
-                UserDefaults.standard.bool(forKey: "UseOnDeviceAnisette") {
-                let anisette = try await OnDeviceAnisetteHelper.shared.getSideSignAnisetteData()
-                let portal = DeveloperPortal()
-                let result = try await portal.authenticate(
-                    appleID: appleID, password: password, anisetteData: anisette,
-                    xcodeVersion: "27.0 (27A5218g)",
-                    accountRepairHandler: { _, _ in .cancel },
-                    verificationHandler: { [weak self] request in
-                        guard let self else { return .cancel }
-                        return await self.handleSideSignVerification(request)
-                    })
-                // Keep StosSign's types for the existing App ID/signing UI only.
-                guard let personID = Int(result.account.identifier) else {
-                    throw "SideSign returned an unsupported account identifier."
+            // Both Anisette modes sign in through SideSign, which handles every 2FA
+            // flow (trusted device, pushed code, SMS, voice). Only the source of the
+            // Anisette headers differs.
+            let anisette = try await OnDeviceAnisetteHelper.shared.getSideSignAnisetteDataForCurrentMode()
+            let portal = DeveloperPortal()
+            let result = try await portal.authenticate(
+                appleID: appleID, password: password, anisetteData: anisette,
+                xcodeVersion: "27.0 (27A5218g)",
+                accountRepairHandler: { _, _ in .cancel },
+                verificationHandler: { [weak self] request in
+                    guard let self else { return .cancel }
+                    return await self.handleSideSignVerification(request)
+                })
+            // Keep StosSign's types for the existing App ID/signing UI only.
+            guard let personID = Int(result.account.identifier) else {
+                throw "SideSign returned an unsupported account identifier."
+            }
+            let accountData = try JSONSerialization.data(withJSONObject: [
+                "email": result.account.appleID,
+                "personId": personID,
+                "dsFirstName": result.account.firstName,
+                "dsLastName": result.account.lastName
+            ])
+            let account = try JSONDecoder().decode(Account.self, from: accountData)
+            let session = AppleAPISession(dsid: result.session.dsid, authToken: result.session.authToken,
+                anisetteData: try OnDeviceAnisetteHelper.shared.convert(result.session.anisetteData))
+            let teams: [Team] = try await portal.fetchTeams(for: result.account, session: result.session).map { team in
+                let type: TeamType
+                switch team.type {
+                case .free: type = .free
+                case .individual: type = .individual
+                case .organization: type = .organization
+                case .unknown: type = .unknown
                 }
-                let accountData = try JSONSerialization.data(withJSONObject: [
-                    "email": result.account.appleID,
-                    "personId": personID,
-                    "dsFirstName": result.account.firstName,
-                    "dsLastName": result.account.lastName
-                ])
-                account = try JSONDecoder().decode(Account.self, from: accountData)
-                session = AppleAPISession(dsid: result.session.dsid, authToken: result.session.authToken,
-                    anisetteData: try OnDeviceAnisetteHelper.shared.convert(result.session.anisetteData))
-                sideSignTeams = try await portal.fetchTeams(for: result.account, session: result.session).map { team in
-                    let type: TeamType
-                    switch team.type {
-                    case .free: type = .free
-                    case .individual: type = .individual
-                    case .organization: type = .organization
-                    case .unknown: type = .unknown
-                    }
-                    return Team(name: team.name, identifier: team.identifier, type: type, account: account)
-                }
-            } else {
-                let anisetteData = try await AnisetteDataHelper.shared.getAnisetteData()
-                (account, session) = try await AppleAPI.shared.authenticate(appleID: appleID, password: password, anisetteData: anisetteData) { [weak self] completionHandler in
-                    guard let self else {
-                        completionHandler(nil)
-                        return
-                    }
-
-                    self.prepareForVerification(using: completionHandler)
-                }
+                return Team(name: team.name, identifier: team.identifier, type: type, account: account)
             }
 
             guard !isAuthenticationCancellationRequested else {
@@ -141,12 +128,6 @@ class LoginViewModel: ObservableObject {
             Keychain.shared.appleIDEmailAddress = appleID
             Keychain.shared.appleIDPassword = password
 
-            let teams: [Team]
-            if let sideSignTeams {
-                teams = sideSignTeams
-            } else {
-                teams = try await fetchTeams(for: account, session: session)
-            }
             guard !teams.isEmpty else { throw "Unable to Fetch Team!" }
             logging(text: "Successfully fetched teams")
             availableTeams = teams
@@ -177,11 +158,14 @@ class LoginViewModel: ObservableObject {
         switch request {
         case .selectDeliveryMethod(let preferred, let phones):
             if preferred == .sms, let phone = phones.first {
+                logs.append("Requesting verification code by SMS\n")
                 return .requestSMS(phoneID: phone.id)
             }
+            logs.append("Requesting verification code on your trusted devices\n")
             return .requestTrustedDevice
         case .trustedDevice, .sms, .voice:
             if let error = request.error { logs.append("\(error)\n") }
+            logs.append("Enter the verification code above, then tap Continue\n")
             let code: String? = await withCheckedContinuation { continuation in
                 prepareForVerification { continuation.resume(returning: $0) }
             }

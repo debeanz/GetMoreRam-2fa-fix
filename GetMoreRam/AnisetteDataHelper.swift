@@ -100,7 +100,8 @@ final class AnisetteDataHelper
                 let formatter = DateFormatter()
                 formatter.locale = Locale(identifier: "en_US_POSIX")
                 formatter.calendar = Calendar(identifier: .gregorian)
-                formatter.timeZone = TimeZone.current
+                // The trailing 'Z' means UTC, so format in UTC.
+                formatter.timeZone = TimeZone(identifier: "UTC")
                 formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
                 let dateString = formatter.string(from: Date())
                 formattedJSON["date"] = dateString

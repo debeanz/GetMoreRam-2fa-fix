@@ -26,6 +26,51 @@ final class OnDeviceAnisetteHelper {
         try convert(await getSideSignAnisetteData())
     }
 
+    /// Anisette for the current Settings choice: generated on-device, or fetched
+    /// from the configured server. Either way the result goes to SideSign, so
+    /// both modes share the same (working) 2FA implementation.
+    func getSideSignAnisetteDataForCurrentMode() async throws -> SideSign.AnisetteData {
+        let useOnDevice = UserDefaults.standard.object(forKey: "UseOnDeviceAnisette") == nil ||
+            UserDefaults.standard.bool(forKey: "UseOnDeviceAnisette")
+        if useOnDevice {
+            return try await getSideSignAnisetteData()
+        }
+
+        // The server URL is edited in Settings after SharedModel is created, so
+        // re-read it here instead of trusting the value captured at launch.
+        let serverText = (UserDefaults.standard.string(forKey: "AnisetteServer") ?? "https://ani.sidestore.io")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let serverURL = URL(string: serverText), serverURL.scheme != nil else {
+            throw "Invalid Anisette server URL: \(serverText)"
+        }
+        let helper = AnisetteDataHelper.shared
+        helper.url = serverURL
+        let remote = try await helper.getAnisetteData()
+        return convertToSideSign(remote, userAgent: helper.userAgent)
+    }
+
+    func convertToSideSign(_ data: StosSign_Common.AnisetteData, userAgent: String?) -> SideSign.AnisetteData {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+
+        return SideSign.AnisetteData(
+            machineID: data.machineID,
+            oneTimePassword: data.oneTimePassword,
+            localUserID: data.localUserID,
+            routingInfo: String(data.routingInfo),
+            deviceID: data.deviceUniqueIdentifier,
+            serialNumber: data.deviceSerialNumber,
+            clientInfo: data.deviceDescription,
+            userAgent: userAgent ?? "AuthKit/1 (Macintosh; OS X 27.0) (com.apple.akd/1.0)",
+            clientTime: formatter.string(from: data.date),
+            locale: data.locale.identifier,
+            timeZone: data.timeZone.abbreviation() ?? "UTC"
+        )
+    }
+
     func getSideSignAnisetteData() async throws -> SideSign.AnisetteData {
         let identifier = try ensureIdentifier()
         let existingBlob = Keychain.shared.adiPb.flatMap {
