@@ -24,17 +24,33 @@ class LoginViewModel: ObservableObject {
     @Published private(set) var isVerificationCodeSubmitting = false
     @Published var logs = ""
     @Published var availableTeams: [Team] = []
-    
-    private var verificationCodeHandler: ((String?) -> Void)?
+    @Published private(set) var canRequestSMSCode = false
+
+    private enum VerificationInput {
+        case code(String)
+        case requestSMS
+    }
+
+    private var verificationCodeHandler: ((VerificationInput?) -> Void)?
+    private var trustedPhoneID = "1"
     private var isAuthenticationCancellationRequested = false
-    
+
     func submitVerificationCode() {
         guard !isVerificationCodeSubmitting,
               let verificationCodeHandler else { return }
 
         self.verificationCodeHandler = nil
         isVerificationCodeSubmitting = true
-        verificationCodeHandler(verificationCode)
+        verificationCodeHandler(.code(verificationCode))
+    }
+
+    func requestSMSCode() {
+        guard !isVerificationCodeSubmitting,
+              let verificationCodeHandler else { return }
+
+        self.verificationCodeHandler = nil
+        isVerificationCodeSubmitting = true
+        verificationCodeHandler(.requestSMS)
     }
 
     func cancelAuthentication() {
@@ -70,6 +86,8 @@ class LoginViewModel: ObservableObject {
 
         defer {
             verificationCodeHandler = nil
+            canRequestSMSCode = false
+            trustedPhoneID = "1"
             appleID = ""
             password = ""
             needVerificationCode = false
@@ -141,7 +159,7 @@ class LoginViewModel: ObservableObject {
         }
     }
 
-    private func prepareForVerification(using handler: @escaping (String?) -> Void) {
+    private func prepareForVerification(using handler: @escaping (VerificationInput?) -> Void) {
         guard !isAuthenticationCancellationRequested else {
             handler(nil)
             return
@@ -157,6 +175,7 @@ class LoginViewModel: ObservableObject {
         guard !isAuthenticationCancellationRequested else { return .cancel }
         switch request {
         case .selectDeliveryMethod(let preferred, let phones):
+            if let phone = phones.first { trustedPhoneID = phone.id }
             if preferred == .sms, let phone = phones.first {
                 logs.append("Requesting verification code by SMS\n")
                 return .requestSMS(phoneID: phone.id)
@@ -165,12 +184,28 @@ class LoginViewModel: ObservableObject {
             return .requestTrustedDevice
         case .trustedDevice, .sms, .voice:
             if let error = request.error { logs.append("\(error)\n") }
+            if case .trustedDevice = request {
+                logs.append("Waiting for the code from your trusted devices\n")
+                canRequestSMSCode = true
+            } else if case .voice = request {
+                logs.append("Code sent by phone call\n")
+                canRequestSMSCode = false
+            } else {
+                logs.append("Code sent by SMS\n")
+                canRequestSMSCode = false
+            }
             logs.append("Enter the verification code above, then tap Continue\n")
-            let code: String? = await withCheckedContinuation { continuation in
+            let input: VerificationInput? = await withCheckedContinuation { continuation in
                 prepareForVerification { continuation.resume(returning: $0) }
             }
-            guard let code, !isAuthenticationCancellationRequested else { return .cancel }
-            return .verificationCode(code.trimmingCharacters(in: .whitespacesAndNewlines))
+            guard let input, !isAuthenticationCancellationRequested else { return .cancel }
+            switch input {
+            case .code(let code):
+                return .verificationCode(code.trimmingCharacters(in: .whitespacesAndNewlines))
+            case .requestSMS:
+                logs.append("Requesting verification code by SMS\n")
+                return .requestSMS(phoneID: trustedPhoneID)
+            }
         }
     }
     

@@ -57,7 +57,7 @@ final class AnisetteDataHelper
         
         let ans : AnisetteData
         if let identifier = Keychain.shared.identifier,
-           let adiPb = Keychain.shared.adiPb {
+           let adiPb = Keychain.shared.remoteAdiPb {
             ans = try await self.fetchAnisetteV3(identifier, adiPb)
         } else {
             ans = try await self.provision()
@@ -78,7 +78,7 @@ final class AnisetteDataHelper
                     if let message = message,
                        message.contains("-45061") {
                         self.printOut("Error message contains -45061 (not provisioned), resetting adi.pb and retrying")
-                        Keychain.shared.adiPb = nil
+                        Keychain.shared.remoteAdiPb = nil
                         return try await provision()
                     } else { throw message ?? "Unknown error" }
                 }
@@ -184,7 +184,7 @@ final class AnisetteDataHelper
         self.socket = socket
         socket.resume()
         try await self.receiveProvisioningMessages(from: socket)
-        return try await self.fetchAnisetteV3(Keychain.shared.identifier!, Keychain.shared.adiPb!)
+        return try await self.fetchAnisetteV3(Keychain.shared.identifier!, Keychain.shared.remoteAdiPb!)
     }
 
     private func receiveProvisioningMessages(from socket: URLSessionWebSocketTask) async throws {
@@ -250,7 +250,7 @@ final class AnisetteDataHelper
                 self.printOut("The server didn't give us an adi.pb file")
                 throw "The server didn't give us an adi.pb file"
             }
-            Keychain.shared.adiPb = adiPb
+            Keychain.shared.remoteAdiPb = adiPb
             return true
             
         default:

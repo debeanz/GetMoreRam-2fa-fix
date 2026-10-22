@@ -138,6 +138,18 @@ struct SettingsView: View {
                             .disabled(viewModel.isVerificationCodeSubmitting)
                     } header: {
                         Text("Verification Code")
+                    } footer: {
+                        if viewModel.canRequestSMSCode {
+                            Text("No popup on your devices? Have Apple text the code to your trusted phone number instead.")
+                        }
+                    }
+                    if viewModel.canRequestSMSCode {
+                        Section {
+                            Button("Text Me the Code Instead") {
+                                viewModel.requestSMSCode()
+                            }
+                            .disabled(viewModel.isVerificationCodeSubmitting)
+                        }
                     }
                 }
                 Section {
@@ -249,6 +261,7 @@ struct SettingsView: View {
     
     func cleanUp() {
         Keychain.shared.adiPb = nil
+        Keychain.shared.remoteAdiPb = nil
         Keychain.shared.identifier = nil
         Keychain.shared.appleIDPassword = nil
         Keychain.shared.appleIDEmailAddress = nil

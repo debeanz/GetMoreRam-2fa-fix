@@ -80,6 +80,11 @@ public class Keychain
     
     @KeychainItem(key: "adiPb")
     public var adiPb: String?
+
+    // Server-mode provisioning is kept apart from the on-device blob so that
+    // switching modes doesn't reprovision (and look like a new device to Apple).
+    @KeychainItem(key: "remoteAdiPb")
+    public var remoteAdiPb: String?
     
     private init()
     {
