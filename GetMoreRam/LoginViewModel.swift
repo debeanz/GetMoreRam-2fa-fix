@@ -88,6 +88,7 @@ class LoginViewModel: ObservableObject {
         AnisetteDataHelper.shared.loggingFunc = logging
 
         defer {
+            print("---- Sign-in log ----\n\(logs)---- End of sign-in log ----")
             verificationCodeHandler = nil
             canRequestSMSCode = false
             trustedPhoneID = "1"

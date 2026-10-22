@@ -77,6 +77,19 @@ struct SettingsView: View {
             }
             
             Section {
+                ShareLink(item: AppLog.url) {
+                    Text("Share Log File")
+                }
+                Button("Clear Log File", role: .destructive) {
+                    AppLog.clear()
+                }
+            } header: {
+                Text("Logs")
+            } footer: {
+                Text("GetMoreRam.log is also in the Files app under On My iPhone › Get More Ram. It may contain your Apple ID email and device identifiers, but never your password.")
+            }
+
+            Section {
                 Button("Clean Up Keychain") {
                     cleanUp()
                 }

@@ -9,6 +9,10 @@ import SwiftUI
 
 @main
 struct GetMoreRamApp: App {
+    init() {
+        AppLog.start()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
