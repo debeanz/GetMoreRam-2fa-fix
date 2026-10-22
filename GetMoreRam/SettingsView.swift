@@ -84,7 +84,9 @@ struct SettingsView: View {
                 Text("If something went wrong during signing in, please try to clean up the keychain, repoen the app and try again. \n \nIf you use SideStore and are already signed in, please also try exporting SideStore Account from SideStore settings and import it here to sign in.")
             }
         }
-        .alert("Error", isPresented: $errorShow){
+        .alert("Error", isPresented: Binding(
+            get: { errorShow && !viewModel.loginModalShow },
+            set: { errorShow = $0 })){
             Button("OK".loc, action: {
             })
         } message: {
@@ -168,6 +170,12 @@ struct SettingsView: View {
             }
             .navigationTitle("Sign in")
             .navigationBarTitleDisplayMode(.inline)
+            // Show sign-in errors on the sheet so the Debugging log stays visible.
+            .alert("Error", isPresented: $errorShow) {
+                Button("OK".loc, action: {})
+            } message: {
+                Text(errorInfo)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel", role: .cancel) {

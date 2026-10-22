@@ -11,6 +11,8 @@ import StosSign_Common
 import class SideSign.DeveloperPortal
 import enum SideSign.TwoFactorRequest
 import enum SideSign.TwoFactorResponse
+import enum SideSign.ServerError
+import struct SideSign.AuthSession
 
 @MainActor
 class LoginViewModel: ObservableObject {
@@ -33,6 +35,7 @@ class LoginViewModel: ObservableObject {
 
     private var verificationCodeHandler: ((VerificationInput?) -> Void)?
     private var trustedPhoneID = "1"
+    private var preferSMS = false
     private var isAuthenticationCancellationRequested = false
 
     func submitVerificationCode() {
@@ -88,6 +91,7 @@ class LoginViewModel: ObservableObject {
             verificationCodeHandler = nil
             canRequestSMSCode = false
             trustedPhoneID = "1"
+            preferSMS = false
             appleID = ""
             password = ""
             needVerificationCode = false
@@ -101,16 +105,32 @@ class LoginViewModel: ObservableObject {
             // Both Anisette modes sign in through SideSign, which handles every 2FA
             // flow (trusted device, pushed code, SMS, voice). Only the source of the
             // Anisette headers differs.
-            let anisette = try await OnDeviceAnisetteHelper.shared.getSideSignAnisetteDataForCurrentMode()
             let portal = DeveloperPortal()
-            let result = try await portal.authenticate(
-                appleID: appleID, password: password, anisetteData: anisette,
-                xcodeVersion: "27.0 (27A5218g)",
-                accountRepairHandler: { _, _ in .cancel },
-                verificationHandler: { [weak self] request in
-                    guard let self else { return .cancel }
-                    return await self.handleSideSignVerification(request)
-                })
+            func signIn() async throws -> AuthSession {
+                let anisette = try await OnDeviceAnisetteHelper.shared.getSideSignAnisetteDataForCurrentMode()
+                return try await portal.authenticate(
+                    appleID: appleID, password: password, anisetteData: anisette,
+                    xcodeVersion: "27.0 (27A5218g)",
+                    accountRepairHandler: { _, _ in .cancel },
+                    verificationHandler: { [weak self] request in
+                        guard let self else { return .cancel }
+                        return await self.handleSideSignVerification(request)
+                    })
+            }
+
+            let result: AuthSession
+            do {
+                preferSMS = false
+                result = try await signIn()
+            } catch ServerError.badServerResponse(let reason, let payload)
+                        where reason.hasPrefix("Trusted device request failed") && !isAuthenticationCancellationRequested {
+                // Apple can reject the trusted-device push for some Anisette
+                // providers (HTTP 500). Sign in again and have the code texted.
+                logging(text: "\(reason)\n\(payload)")
+                logging(text: "Trusted device push failed, retrying with SMS")
+                preferSMS = true
+                result = try await signIn()
+            }
             // Keep StosSign's types for the existing App ID/signing UI only.
             guard let personID = Int(result.account.identifier) else {
                 throw "SideSign returned an unsupported account identifier."
@@ -155,6 +175,7 @@ class LoginViewModel: ObservableObject {
             if isAuthenticationCancellationRequested {
                 throw CancellationError()
             }
+            logs.append("Sign-in failed: \(error)\n")
             throw error
         }
     }
@@ -176,9 +197,9 @@ class LoginViewModel: ObservableObject {
         switch request {
         case .selectDeliveryMethod(let preferred, let phones):
             if let phone = phones.first { trustedPhoneID = phone.id }
-            if preferred == .sms, let phone = phones.first {
+            if preferred == .sms || preferSMS {
                 logs.append("Requesting verification code by SMS\n")
-                return .requestSMS(phoneID: phone.id)
+                return .requestSMS(phoneID: trustedPhoneID)
             }
             logs.append("Requesting verification code on your trusted devices\n")
             return .requestTrustedDevice
